@@ -1,4 +1,4 @@
-"""Optional model fallback. Off unless a key is set (GROQ_API_KEY or ASSIST_LLM_KEY).
+"""Optional model fallback. Off unless a key is set (OPENAI_API_KEY, GROQ_API_KEY or ASSIST_LLM_KEY).
 
 The model never answers and never writes facts or citations. It only translates odd wording into the short
 canonical sentences the rules already parse, and every translated line is checked against the original text
@@ -15,10 +15,14 @@ import urllib.request
 
 from .text import _DATE_RX, stem, tokens
 
-URL = os.environ.get("ASSIST_LLM_URL", "https://api.groq.com/openai/v1/chat/completions")
-MODEL = os.environ.get("ASSIST_LLM_MODEL", "openai/gpt-oss-20b")
-PRICE_IN = float(os.environ.get("ASSIST_PRICE_IN", "0.075")) / 1e6     # USD per token, Groq list price for gpt-oss-20b
-PRICE_OUT = float(os.environ.get("ASSIST_PRICE_OUT", "0.30")) / 1e6
+# Provider follows the key that is set: ASSIST_LLM_KEY, then OPENAI_API_KEY, then GROQ_API_KEY.
+# Every default below can be overridden with ASSIST_LLM_URL, ASSIST_LLM_MODEL, ASSIST_PRICE_IN, ASSIST_PRICE_OUT.
+_OPENAI = not os.environ.get("ASSIST_LLM_KEY") and bool(os.environ.get("OPENAI_API_KEY"))
+URL = os.environ.get("ASSIST_LLM_URL", "https://api.openai.com/v1/chat/completions" if _OPENAI
+                     else "https://api.groq.com/openai/v1/chat/completions")
+MODEL = os.environ.get("ASSIST_LLM_MODEL", "gpt-4o-mini" if _OPENAI else "openai/gpt-oss-20b")
+PRICE_IN = float(os.environ.get("ASSIST_PRICE_IN", "0.15" if _OPENAI else "0.075")) / 1e6    # USD per token, list prices
+PRICE_OUT = float(os.environ.get("ASSIST_PRICE_OUT", "0.60" if _OPENAI else "0.30")) / 1e6
 MAX_CALLS = int(os.environ.get("ASSIST_LLM_MAX_CALLS", "80"))          # per process
 TIMEOUT = float(os.environ.get("ASSIST_LLM_TIMEOUT", "8"))
 
@@ -27,7 +31,7 @@ _state = {"fails": 0, "cache": None}
 
 
 def key() -> str | None:
-    return os.environ.get("ASSIST_LLM_KEY") or os.environ.get("GROQ_API_KEY")
+    return os.environ.get("ASSIST_LLM_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("GROQ_API_KEY")
 
 
 def enabled() -> bool:

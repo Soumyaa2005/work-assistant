@@ -25,7 +25,8 @@ def setup(tmp, days, feedback):
 
 def run(pack, *args):
     env = dict(os.environ, R3_PACK=str(pack), ASSIST_STORE=str(pack / "s.sqlite"))
-    env.pop("GROQ_API_KEY", None)
+    for k in ("GROQ_API_KEY", "OPENAI_API_KEY", "ASSIST_LLM_KEY", "EMBED_API_KEY"):
+        env.pop(k, None)
     res = subprocess.run([sys.executable, str(ROOT / "my_solution.py"), *args], capture_output=True, text=True, env=env, cwd=pack)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout)

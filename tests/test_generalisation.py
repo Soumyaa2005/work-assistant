@@ -77,7 +77,8 @@ def pack(tmp_path_factory):
 
 
 def run(pack, *args):
-    env = dict(os.environ, R3_PACK=str(pack), ASSIST_STORE=str(pack / "store.sqlite"))
+    env = {k: v for k, v in os.environ.items() if k not in ("GROQ_API_KEY", "OPENAI_API_KEY", "ASSIST_LLM_KEY", "EMBED_API_KEY")}
+    env.update(R3_PACK=str(pack), ASSIST_STORE=str(pack / "store.sqlite"))
     res = subprocess.run([sys.executable, str(ROOT / "my_solution.py"), *args], capture_output=True, text=True, env=env, cwd=pack)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout)

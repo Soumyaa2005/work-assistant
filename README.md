@@ -42,13 +42,17 @@ Opens http://127.0.0.1:8765 (standard library only). Pick a person, ingest throu
 The rules do all the work by default. There is an optional model fallback for wording the rules do not know, off unless you set a key:
 
 ```
-export GROQ_API_KEY=your-key
+export OPENAI_API_KEY=your-key     # OpenAI, default model gpt-4o-mini
+# or: export GROQ_API_KEY=your-key  # Groq, default model openai/gpt-oss-20b
+# or: export ASSIST_LLM_KEY=...  ASSIST_LLM_URL=...  ASSIST_LLM_MODEL=...   # any OpenAI-compatible API
 ```
 
-- Model: `openai/gpt-oss-20b` on Groq (OpenAI-compatible API, standard library `urllib`, nothing to install). Change with `ASSIST_LLM_MODEL`, `ASSIST_LLM_URL`. `ASSIST_LLM=0` switches it off even with a key set.
+The key is read from the environment only; if several are set, `ASSIST_LLM_KEY` wins, then `OPENAI_API_KEY`, then `GROQ_API_KEY`.
+
+- Model: `gpt-4o-mini` through the OpenAI chat completions API when `OPENAI_API_KEY` is set (or `openai/gpt-oss-20b` on Groq when only `GROQ_API_KEY` is set). Plain `urllib`, nothing to install. Change with `ASSIST_LLM_MODEL`, `ASSIST_LLM_URL`. `ASSIST_LLM=0` switches it off even with a key set.
 - It is only called when the rules found nothing: a chat or mail that looks like a handover, date move, delivery or promise; a preference or correction the rules could not read; a question the rules could not answer. Records flagged as prompt injection never reach it.
 - It never answers and never writes facts or citations. It rewrites the text into short canonical sentences, each line is checked so that every name, date and content word comes from the original text, and then the same rules read it. Citations always point at the real record. A question rewrite only widens what the rules look up; the asker's visibility checks still apply.
-- Tokens: counted from the API's `usage` (prompt and completion tokens), summed per process. If the API gives none, characters / 4. Cost uses Groq's list price, $0.075 per million input and $0.30 per million output tokens (`ASSIST_PRICE_IN`, `ASSIST_PRICE_OUT` to change; check the current price). `ask` reports its own tokens in `usage`. `ingest` reports any tokens it used in an extra `usage` field. Replies read from the local cache (`.assist_llm_cache.json`) cost nothing and report 0.
+- Tokens: counted from the API's `usage` (prompt and completion tokens), summed per process. If the API gives none, characters / 4. Cost uses the list price of the provider in use (OpenAI gpt-4o-mini: $0.15 per million input and $0.60 per million output tokens; Groq gpt-oss-20b: $0.075 and $0.30) (`ASSIST_PRICE_IN`, `ASSIST_PRICE_OUT` to change; check the current price). `ask` reports its own tokens in `usage`. `ingest` reports any tokens it used in an extra `usage` field. Replies read from the local cache (`.assist_llm_cache.json`) cost nothing and report 0.
 - At most 80 model calls per process, 8 second timeout. After two failures in a process it stops trying and answers with rules only.
 - No key: every call reports 0 tokens, because no model ran.
 - No key is stored in the repo.
@@ -78,14 +82,14 @@ With the organisers' scorer: 85 out of 85 (briefs 20/20, answers 15/15, honesty 
 
 ## AI assistants used
 
-Claude (Anthropic) helped write the code and tests. The optional runtime fallback uses gpt-oss-20b via Groq.
+Claude (Anthropic) helped write the code and tests. The optional runtime fallback uses gpt-4o-mini via the OpenAI API (or gpt-oss-20b via Groq).
 
 ## Optional embeddings (semantic matching)
 
-Off unless `EMBED_API_KEY` is set. It does one job: when no task title shares enough words with a "who / when / status" question, the titles of the tasks the asker may already see are ranked by embedding similarity (`assist/embed.py`).
+Off unless `EMBED_API_KEY` or `OPENAI_API_KEY` is set. It does one job: when no task title shares enough words with a "who / when / status" question, the titles of the tasks the asker may already see are ranked by embedding similarity (`assist/embed.py`).
 
 ```
-export EMBED_API_KEY=your-key      # any OpenAI-compatible /embeddings endpoint
+export OPENAI_API_KEY=your-key     # also used for embeddings (or set EMBED_API_KEY / EMBED_URL separately)
 ```
 
 - Defaults: `EMBED_URL` (OpenAI), `EMBED_MODEL=text-embedding-3-small`. `ASSIST_EMBED=0` switches it off.

@@ -28,6 +28,7 @@ def fake(monkeypatch, reply):
 def clean(monkeypatch, tmp_path):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("ASSIST_LLM_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("ASSIST_LLM_CACHE", str(tmp_path / "cache.json"))
     monkeypatch.setattr(llm, "_state", {"fails": 0, "cache": None})
     monkeypatch.setattr(llm, "USAGE", {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "ms": 0, "calls": 0})
@@ -163,3 +164,17 @@ def test_real_statements_still_pass_the_guard(tmp_path, monkeypatch):
     assert llm._line_ok("Sharing the plan as promised", "Plan bhej raha hu jaisa promise kiya tha")
     assert llm._line_ok("the media plan kal tak", "media plan kal tak bhej dunga")
     assert not llm._line_ok("revert kal tak", "will revert kal tak")
+
+
+def test_openai_key_selects_openai_defaults(monkeypatch):
+    import importlib
+    from assist import llm as L
+    for k in ("ASSIST_LLM_KEY", "GROQ_API_KEY", "ASSIST_LLM_URL", "ASSIST_LLM_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    m = importlib.reload(L)
+    try:
+        assert m.URL == "https://api.openai.com/v1/chat/completions" and m.MODEL == "gpt-4o-mini" and m.enabled()
+    finally:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        importlib.reload(L)

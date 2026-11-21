@@ -1,4 +1,4 @@
-"""Optional semantic matcher. Off unless EMBED_API_KEY is set.
+"""Optional semantic matcher. Off unless EMBED_API_KEY (or OPENAI_API_KEY) is set.
 
 It is only a fallback for one job: when plain word matching finds no task for a question, rank the titles of
 tasks the asker may already see by embedding similarity. Vectors are cached in SQLite (table `embeddings`),
@@ -25,8 +25,12 @@ USAGE = {"input_tokens": 0, "cost_usd": 0.0, "ms": 0, "calls": 0}
 _state = {"fails": 0}
 
 
+def _key() -> str | None:
+    return os.environ.get("EMBED_API_KEY") or os.environ.get("OPENAI_API_KEY")
+
+
 def enabled() -> bool:
-    return (bool(os.environ.get("EMBED_API_KEY")) and os.environ.get("ASSIST_EMBED", "1") != "0"
+    return (bool(_key()) and os.environ.get("ASSIST_EMBED", "1") != "0"
             and _state["fails"] < 2 and USAGE["calls"] < MAX_CALLS)
 
 
@@ -37,7 +41,7 @@ def usage() -> dict:
 def _post_embed(texts: list[str]) -> tuple[list[list[float]], int]:
     body = {"model": MODEL, "input": texts}
     req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST", headers={
-        "Authorization": f"Bearer {os.environ['EMBED_API_KEY']}", "Content-Type": "application/json", "User-Agent": "assist/0.3"})
+        "Authorization": f"Bearer {_key()}", "Content-Type": "application/json", "User-Agent": "assist/0.3"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         data = json.loads(r.read())
     vecs = [d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"])]

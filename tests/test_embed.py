@@ -26,7 +26,7 @@ def store(tmp_path, monkeypatch):
     run(tmp_path, "ingest", "--day", "1")
     monkeypatch.setenv("R3_PACK", str(tmp_path))
     monkeypatch.setenv("ASSIST_STORE", str(tmp_path / "s.sqlite"))
-    for k in ("GROQ_API_KEY", "ASSIST_LLM_KEY"):
+    for k in ("GROQ_API_KEY", "ASSIST_LLM_KEY", "OPENAI_API_KEY", "EMBED_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(embed, "_post_embed", fake_post)
     monkeypatch.setattr(embed, "USAGE", {"input_tokens": 0, "cost_usd": 0.0, "ms": 0, "calls": 0})
