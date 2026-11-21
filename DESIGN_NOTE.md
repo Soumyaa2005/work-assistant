@@ -28,3 +28,21 @@ Task state is rebuilt from the real changes (created, owner, due, status) in tim
 - Hardcode answers or client nicknames from the five visible days.
 - Send a record to the model if it looks like an injection, or let the model's output carry facts the record did not contain.
 - Claim the 85/85 on days 1 to 5 predicts the hidden days. It does not.
+
+```mermaid
+flowchart LR
+    A[Daily records<br/>chats, mails, notes,<br/>tasks, docs, events] --> B[ingest]
+    B --> C[(SQLite memory<br/>records, signals,<br/>promises, facts)]
+    F[Feedback from day N-1<br/>corrections, preferences,<br/>ignored verdicts] --> B
+    B -. odd wording only .-> M[Optional small model<br/>rewrites wording,<br/>output checked]
+    M -.-> B
+
+    C --> V{can_see?<br/>company, private,<br/>restricted}
+    V --> BR[brief]
+    V --> AS[ask]
+    BR --> O[JSON with<br/>cited record ids]
+    AS --> O
+
+    U[forget] --> C
+    C -.->|hide topic| V
+```
