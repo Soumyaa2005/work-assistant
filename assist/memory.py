@@ -3,7 +3,7 @@ import json
 import re
 
 from . import pack
-from .text import stem, terms
+from .text import DATE, NUMBER_WORDS, norm_date, stem, terms
 
 _FORGET_NOISE = {"forget", "said", "mention", "mentioned", "everything", "anything", "wrote", "told", "regard", "regarding"}
 
@@ -50,7 +50,27 @@ def text_forgotten(person: str, text: str, fsets) -> bool:
 
 
 # ---------------------------------------------------------------- feedback intake
-_CORR = re.compile(r"(?:no[,.]?\s*)?(?P<new>[A-Z][a-z]+)\s+owns\s+(?P<subj>[a-z ]+?)\s+now(?:[,.]?\s*not\s+(?P<old>[A-Z][a-z]+))?", re.I)
+_N = r"(?-i:[A-Z][a-z]+)"
+_CORRS = [
+    re.compile(r"(?i:(?:\b(?:no|nope|actually|correction)\b[,.:]?\s*)?)(?P<new>" + _N + r")\s+(?i:(?:now\s+)?(?:owns|handles|has|manages|runs|looks\s+after|"
+               r"is\s+(?:now\s+)?(?:handling|owning|managing|running|on|the\s+owner\s+of)))\s+(?P<subj>[a-z ]+?)(?i:\s+now)?"
+               r"(?=[,.;]|\s+not\b|\s*$)(?:[,.]?\s*(?i:and\s+)?(?i:not)\s+(?P<old>" + _N + r"))?"),
+    re.compile(r"(?i)\b(?P<subj>billing)\s+(?:is\s+|goes\s+to\s+|now\s+(?:is\s+)?|is\s+with\s+|now\s+with\s+)(?P<new>" + _N + r")(?:'s)?(?:\s+now)?"
+               r"(?:[,.]?\s*not\s+(?P<old>" + _N + r"))?"),
+    re.compile(r"(?i)\b(?:it'?s|it\s+is)\s+(?P<new>" + _N + r")[,]?\s+not\s+(?P<old>" + _N + r")[,]?\s+(?:for|on)\s+(?P<subj>[a-z ]+?)\s*[.!]?$"),
+]
+_NUM_PREF = [
+    re.compile(r"\b(?:max(?:imum)?|at most|no more than|only|top|limit(?: to)?|keep (?:it |them )?(?:to|under|within)|just|up to)\s+(\d+|" + "|".join(NUMBER_WORDS) + r")\b", re.I),
+    re.compile(r"\b(\d+|" + "|".join(NUMBER_WORDS) + r")\s+(?:items?|bullets?|points?|lines?|things?|changes?)\s+(?:max|at most|tops|only)\b", re.I),
+]
+
+
+def _corr_match(words: str):
+    for rx in _CORRS:
+        m = rx.search(words)
+        if m:
+            return m
+    return None
 
 
 def apply_feedback(conn, entries: list[dict]) -> None:
@@ -71,11 +91,11 @@ def apply_feedback(conn, entries: list[dict]) -> None:
 def _correction(conn, e):
     from .extract import _person   # local import: extract needs pack, not memory
     words, person = e.get("words", ""), e.get("person")
-    m = _CORR.search(words)
+    m = _corr_match(words)
     client = subject = value = vid = None
-    d = re.search(r"\blaunch\b.{0,40}?\b(\d{1,2}\s+[A-Z][a-z]{2})", words)
-    if not m and d:
-        subject, value = "launch", d.group(1)
+    d = re.search(r"(?i)\blaunch\b.{0,40}?(" + DATE + r")", words)
+    if not m and d and norm_date(d.group(1)):
+        subject, value = "launch", norm_date(d.group(1))
         mt = e.get("meeting")
         ev = conn.execute("SELECT client FROM records WHERE type='event' AND json_extract(raw,'$.event_id')=?", (mt,)).fetchone() if mt else None
         client = ev["client"] if ev else None
@@ -98,13 +118,21 @@ def person_prefs(conn, person: str) -> dict:
     out = {"max_changed": None, "blockers_first": False, "skip": set()}
     for r in conn.execute("SELECT words FROM prefs WHERE person=? ORDER BY id", (person,)):
         w = r["words"]
-        m = re.search(r"\b(?:max(?:imum)?|at most|no more than|only|top|limit(?: to)?)\s+(\d+)\b", w, re.I)
-        if m:
-            out["max_changed"] = int(m.group(1))
-        if re.search(r"blocker|blocked", w, re.I) and re.search(r"first|top|start", w, re.I):
+        n = None
+        for rx in _NUM_PREF:
+            mm = rx.search(w)
+            if mm:
+                v = mm.group(1).lower()
+                n = int(v) if v.isdigit() else NUMBER_WORDS[v]
+                break
+        if n:
+            out["max_changed"] = n
+        if re.search(r"blocker|blocked", w, re.I) and re.search(r"first|top|start|lead|upfront|up front|front|before", w, re.I):
             out["blockers_first"] = True
-        m = re.match(r"\s*(?:skip|ignore|exclude|hide|no)\s+(.+?)(?:\s+in my|\s+from my|\s+please|[.!]|$)", w, re.I)
-        if m:
+        m = re.match(r"\s*(?:skip|ignore|exclude|hide|leave out|stop (?:showing|mentioning|including)|"
+                     r"(?:don'?t|do not) (?:show|include|mention|tell me about|bring up)|i (?:don'?t|do not) care about|no)\s+(.+?)"
+                     r"(?:\s+in my|\s+from my|\s+please|[.!]|$)", w, re.I)
+        if m and not (n and re.match(r"\s*no\b", w, re.I)):
             out["skip"] |= terms(m.group(1))
     return out
 

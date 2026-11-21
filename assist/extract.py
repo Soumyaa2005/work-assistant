@@ -7,7 +7,7 @@ import json
 import re
 
 from . import pack
-from .text import INJECTION, cap
+from .text import DATE, INJECTION, cap, norm_date, terms
 
 _PERSON_NAMES = None
 
@@ -157,13 +157,40 @@ def _sheet(conn, rec):
 
 
 # ---------------------------------------------------------------- chat and mail
-_TAKEOVER = re.compile(r"([A-Z][a-z]+)\s+takes over\s+(.+?)\s+from\s+([A-Z][a-z]+)")
-_MOVE = re.compile(r"\b(?:move|moving|moved|push|pushing|pushed|shift|shifting)\s+the\s+([a-z]+(?: [a-z]+)?)\s+to\s+(\d{1,2}\s+[A-Z][a-z]{2})")
-_DELIVER = re.compile(r"^Sharing\s+(.+?)\s+as promised", re.I)
+_NAME = r"(?-i:[A-Z][a-z]+)"
+_TAKEOVER = [
+    re.compile(r"(?P<new>" + _NAME + r")\s+(?:is\s+|will\s+|has\s+|'ll\s+|now\s+)?(?:takes?|taking|taken|took)\s+over\s+(?P<subj>.+?)"
+               r"(?:\s+from\s+(?P<old>" + _NAME + r"))?(?=\s*[.,;!]|\s*$|\s+(?:and|since|as|starting|effective|with)\b)"),
+    re.compile(r"(?:hand(?:ing|ed|s)?|pass(?:ing|ed|es)?)\s+(?P<subj>[a-z ]+?)\s+over\s+to\s+(?P<new>" + _NAME + r")"
+               r"(?:\s+from\s+(?P<old>" + _NAME + r"))?", re.I),
+    re.compile(r"(?P<subj>billing|invoicing|accounts)\s+(?:now\s+)?(?:moves?|moved|goes|went|shifts?|shifted|sits)\s+(?:over\s+)?(?:to|with)\s+"
+               r"(?P<new>" + _NAME + r")(?:\s+from\s+(?P<old>" + _NAME + r"))?", re.I),
+]
+_NOT_IT = r"(?!(?:it|this|that|them|things?)\b)"
+_MOVE = re.compile(r"(?i)\b(?:move|moving|moved|push|pushing|pushed|shift|shifting|shifted|reschedul(?:e|ed|ing)|postpon(?:e|ed|ing)|bring(?:ing)?\s+forward)"
+                   r"\s+(?:the\s+)?" + _NOT_IT + r"(?P<what>[a-z]+(?: [a-z]+)?)\s+(?:up\s+|back\s+|out\s+)?to\s+(?:the\s+)?(?P<date>" + DATE + r")")
+_LAUNCH_IS = re.compile(r"(?i)\b(?P<what>launch)(?:\s+date)?\s+(?:is\s+(?:now\s+)?|will\s+(?:now\s+)?be\s+(?:on\s+)?|"
+                        r"(?:has\s+been\s+|was\s+|got\s+)?(?:moved|pushed|shifted|rescheduled)\s+to\s+|now\s+(?:on\s+)?)(?P<date>" + DATE + r")")
+_GREET = r"(?:(?:hi|hello|hey)\b[^,.!\n]{0,25}[,.!]?\s*)?"
+_DELIVER = [
+    re.compile(r"(?i)^" + _GREET + r"(?:sharing|sending|attaching|attached|sent|here(?:'s| is| are)|please find(?: attached)?|enclosed)\s+(?P<what>.+?)\s+as promised"),
+    re.compile(r"(?i)^" + _GREET + r"as promised,?\s+(?:sharing|sending|attaching|attached|here(?:'s| is| are)?)\s+(?P<what>.+?)\s*[.!]?$"),
+]
+_WD = r"(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)(?:day)?"
+_VERB = r"(?:share|send(?:\s+over)?|deliver|get|finish|complete|submit|circulate|have|revert\s+with|share\s+back)"
+_WILL = r"\b(?:I|we)(?:\s+will|'ll|\s+shall)\s+"
 _P_KAL = re.compile(r"^(?P<what>.+?)\s+(?P<w>kal|parso|aaj)\s+tak\b", re.I)
-_P_NEXT = re.compile(r"^(?P<what>.+?)\s+next\s+(?P<wd>[A-Za-z]+)\s+tak\b", re.I)
-_P_EOD = re.compile(r"\bwill\s+(?:share|send|deliver)\s+(?P<what>.+?)\s+by\s+EOD\s+(?P<w>today|tomorrow)", re.I)
-_P_BY = re.compile(r"\bI\s+will\s+(?:share|send|deliver)\s+(?P<what>.+?)\s+by\s+(?P<wd>[A-Za-z]+)\b", re.I)
+_P_NEXT = re.compile(r"^(?P<what>.+?)\s+next\s+(?P<wd>" + _WD + r")\s+tak\b", re.I)
+_P_WDTAK = re.compile(r"^(?P<what>.+?)\s+(?P<wd>" + _WD + r")\s+tak\b", re.I)
+_P_EOD = re.compile(r"(?:" + _WILL + r"|\bwill\s+)" + _VERB + r"\s+(?P<what>.+?)\s+(?:to\s+you\s+)?(?:by\s+)?(?:(?:EOD|COB|end\s+of\s+(?:the\s+)?day)\s+)?(?P<w>today|tomorrow)\b", re.I)
+_P_BY = re.compile(r"(?:" + _WILL + r"|\bwill\s+)" + _VERB + r"\s+(?P<what>.+?)\s+(?:to\s+you\s+)?by\s+(?:(?:EOD|COB|end\s+of\s+(?:the\s+)?day)\s+)?(?:next\s+)?(?P<wd>" + _WD + r")\b", re.I)
+_LEAD = re.compile(_WILL + _VERB + r"\s+", re.I)
+
+
+def _clean_what(what: str) -> str:
+    what = re.sub(r"^(?:hi|hello|hey)\b[^,]{0,25},\s*", "", what.strip(), flags=re.I)
+    what = _LEAD.sub("", what)
+    return what.strip(" ,.")
 
 
 def _promise_due(rec, m) -> str | None:
@@ -178,9 +205,24 @@ def _promise_due(rec, m) -> str | None:
         return str(d0)
     wd = gd.get("wd")
     if wd:
-        nd = pack.next_weekday(d0, wd, strictly_after="next" in m.group(0).lower())
+        nd = pack.next_weekday(d0, wd, strictly_after=bool(re.search(r"\bnext\b", m.group(0), re.I)))
         return str(nd) if nd else None
     return None
+
+
+def _takeover(body):
+    for rx in _TAKEOVER:
+        m = rx.search(body)
+        if m:
+            return m.group("new"), m.group("subj").strip(), m.group("old")
+    return None
+
+
+def _same_promise(a: str, b: str) -> bool:
+    ta, tb = terms(a), terms(b)
+    if not ta or not tb:
+        return a.lower() == b.lower()
+    return len(ta & tb) / min(len(ta), len(tb)) >= 0.6
 
 
 def _msg(conn, rec):
@@ -188,38 +230,47 @@ def _msg(conn, rec):
     client = rec.get("client")
     if not client or body.endswith("?"):
         return
-    m = _TAKEOVER.search(body)
-    if m:
-        new_name, new_id = _person(m.group(1), "accounts")
-        old_name, _ = _person(m.group(3), "accounts")
-        subj_text = m.group(2).strip()
+    t = _takeover(body)
+    if t:
+        new_first, subj_text, old_first = t
         subj = "billing" if "billing" in subj_text.lower() else re.sub(r"\W+", "_", subj_text.lower())
+        new_name, new_id = _person(new_first, "accounts")
+        if old_first:
+            old_name, _ = _person(old_first, "accounts")
+        else:
+            cur = current_fact(conn, client, subj, rec["at"])
+            old_name = cur["value"] if cur else None
         add_fact(conn, rec, subj, new_name, new_id)
-        add_signal(conn, rec, "owner", subj, 1, f"{new_name} now owns {subj_text} (was {old_name})", old_name, new_name, subj)
-    m = _MOVE.search(body)
+        text = f"{new_name} now owns {subj_text}" + (f" (was {old_name})" if old_name else "")
+        add_signal(conn, rec, "owner", subj, 1, text, old_name, new_name, subj)
+    m = _MOVE.search(body) or _LAUNCH_IS.search(body)
     if m:
-        what = m.group(1).lower()
+        what = m.group("what").lower()
+        new = norm_date(m.group("date"))
         subj = "launch" if "launch" in what else re.sub(r"\W+", "_", what)
-        new = m.group(2)
         cur = current_fact(conn, client, subj, rec["at"])
         old = cur["value"] if cur else None
-        text = f"{cap(what)} moved from {old} to {new}" if old else f"{cap(what)} moved to {new}"
-        add_fact(conn, rec, subj, new)
-        add_signal(conn, rec, "date", subj, 1, text, old, new, what)
-    m = _DELIVER.match(body)
-    if m:
-        what = m.group(1).strip()
-        row = conn.execute("SELECT id FROM promises WHERE client=? AND delivered_by IS NULL AND lower(what)=? AND owner=? "
-                           "ORDER BY at LIMIT 1", (client, what.lower(), rec["author"])).fetchone()
-        if row:
-            conn.execute("UPDATE promises SET delivered_by=? WHERE id=?", (rec["id"], row["id"]))
-        add_signal(conn, rec, "delivered", f"delivered:{what.lower()}", 3,
-                   f"{pack.first_name(rec['author'])} delivered {what}", None, None, what)
-    for rx in (_P_KAL, _P_NEXT, _P_EOD, _P_BY):
+        if new and new != old:
+            text = f"{cap(what)} moved from {old} to {new}" if old else f"{cap(what)} moved to {new}"
+            add_fact(conn, rec, subj, new)
+            add_signal(conn, rec, "date", subj, 1, text, old, new, what)
+    for rx in _DELIVER:
+        m = rx.match(body)
+        if m:
+            what = m.group("what").strip()
+            rows = conn.execute("SELECT id, what FROM promises WHERE client=? AND delivered_by IS NULL AND owner=? ORDER BY at",
+                                (client, rec["author"])).fetchall()
+            row = next((r for r in rows if _same_promise(what, r["what"])), None)
+            if row:
+                conn.execute("UPDATE promises SET delivered_by=? WHERE id=?", (rec["id"], row["id"]))
+            add_signal(conn, rec, "delivered", f"delivered:{what.lower()}", 3,
+                       f"{pack.first_name(rec['author'])} delivered {what}", None, None, what)
+            break
+    for rx in (_P_KAL, _P_NEXT, _P_WDTAK, _P_EOD, _P_BY):
         m = rx.search(body)
         if m:
             due = _promise_due(rec, m)
-            what = m.group("what").strip(" ,.")
+            what = _clean_what(m.group("what"))
             if due and what:
                 conn.execute("INSERT INTO promises(record_id,owner,what,due,client,at) VALUES(?,?,?,?,?,?)",
                              (rec["id"], rec["author"], what, due, client, rec["at"]))

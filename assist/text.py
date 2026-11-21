@@ -9,9 +9,28 @@ _word = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\-]*")
 _SUFFIXES = ("ing", "er", "ed", "s")
 
 INJECTION = re.compile(
-    r"\bassistant\s*:|ignore (your|all|any|previous|the above)|disregard (your|all|previous)|"
-    r"\bmark\b.{0,40}\bas\b.{0,12}\b(at risk|healthy|approved)|system prompt|you must now|new instructions",
+    r"\bassistant\s*:|\bsystem\s*:|<\s*/?\s*system|\[\s*system|"
+    r"ignore (your|all|any|previous|the above|prior|earlier)|disregard (your|all|any|previous|prior|the above)|"
+    r"forget (all |your |any |previous |prior )?(instructions|rules)|override (your|all|any|previous|the) (instructions|rules|guidelines|settings|safeguards)|"
+    r"\bmark\b.{0,40}\bas\b.{0,12}\b(at risk|healthy|approved|green|red)|system prompt|developer mode|jailbreak|"
+    r"you must now|you are now|new instructions|act as (the |an? )|pretend (you|to)|"
+    r"reveal .{0,40}(private|confidential|secret|other client|other compan)|do not (tell|mention|follow)",
     re.I)
+
+_MON = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+DATE = (r"(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MON + r"\b|" + _MON + r"\.?\s+\d{1,2}(?:st|nd|rd|th)?\b)")
+_DATE_RX = re.compile(r"(?i)(?:(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(" + _MON + r")|(" + _MON + r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?)")
+
+NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def norm_date(s: str) -> str | None:
+    """'14th November' / 'Nov 14' / '14 nov' -> '14 Nov'."""
+    m = _DATE_RX.search(s or "")
+    if not m:
+        return None
+    day, mon = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+    return f"{int(day)} {mon[:3].capitalize()}"
 
 
 def tokens(s: str) -> list[str]:

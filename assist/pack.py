@@ -119,7 +119,10 @@ def parse_day_month(s: str, year: int) -> str | None:
 
 
 def next_weekday(d: date, name: str, strictly_after: bool) -> date | None:
-    wd = _WEEKDAYS.get(name.lower())
+    key = name.lower()
+    wd = _WEEKDAYS.get(key)
+    if wd is None:
+        wd = next((i for n, i in _WEEKDAYS.items() if len(key) >= 3 and n.startswith(key[:3])), None)
     if wd is None:
         return None
     delta = (wd - d.weekday()) % 7
