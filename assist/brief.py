@@ -1,4 +1,5 @@
 """Pre-meeting briefs. Every line is built from a signal and cites the record it came from."""
+from __future__ import annotations
 import json
 import time
 from datetime import date

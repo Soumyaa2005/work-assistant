@@ -1,4 +1,5 @@
 """Where the data lives, plus people, clients and time helpers. The only module that knows file layout."""
+from __future__ import annotations
 import json
 import os
 import re

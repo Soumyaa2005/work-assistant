@@ -1,4 +1,5 @@
 """Feedback, corrections, preferences and forgets. Everything is stored per person."""
+from __future__ import annotations
 import json
 import re
 

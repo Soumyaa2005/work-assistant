@@ -1,4 +1,5 @@
 """SQLite memory. Each CLI call is a new process, so everything lives here."""
+from __future__ import annotations
 import json
 import os
 import sqlite3

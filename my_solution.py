@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Entry point: python3 my_solution.py <ingest|brief|ask|forget> ..."""
+from __future__ import annotations
 import os
 import sys
 

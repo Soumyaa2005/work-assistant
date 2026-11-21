@@ -2,6 +2,7 @@
 
 Every path reads only records the asker may see, as of the time of the question.
 """
+from __future__ import annotations
 import json
 import re
 import time

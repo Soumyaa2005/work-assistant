@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 
 STOP = set("""a an the of to for and or in on at is are was were be been it this that with from by as about what

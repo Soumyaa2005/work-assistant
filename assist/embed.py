@@ -6,6 +6,7 @@ so the same text is never embedded twice. It never answers, never writes facts a
 asker cannot read: the candidate list is built after the visibility check. A weak or ambiguous match returns
 nothing, and the rules then say "I have nothing on that" or ask which one.
 """
+from __future__ import annotations
 import hashlib
 import json
 import math

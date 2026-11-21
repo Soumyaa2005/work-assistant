@@ -5,12 +5,14 @@ canonical sentences the rules already parse, and every translated line is checke
 (names, dates and content words must appear in it) before the rules see it. Records already flagged as
 injected never reach the model. No key, an error or a bad reply all mean: rules only.
 """
+from __future__ import annotations
 import hashlib
 import json
 import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 
 from .text import _DATE_RX, stem, tokens
@@ -44,15 +46,34 @@ def usage() -> dict:
 
 
 # ---------------------------------------------------------------- transport
+def _send(body: dict) -> dict:
+    req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST", headers={
+        "Authorization": f"Bearer {key()}", "Content-Type": "application/json", "User-Agent": "assist/0.3"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read())
+
+
 def _post(messages: list[dict]) -> tuple[str, int, int]:
     body = {"model": MODEL, "messages": messages, "temperature": 0, "max_completion_tokens": 700,
             "response_format": {"type": "json_object"}}
     if "gpt-oss" in MODEL:
         body["reasoning_effort"] = "low"
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(), method="POST", headers={
-        "Authorization": f"Bearer {key()}", "Content-Type": "application/json", "User-Agent": "assist/0.3"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        data = json.loads(r.read())
+    elif MODEL.startswith(("gpt-5", "o1", "o3", "o4")):          # reasoning models spend tokens thinking first
+        body.update(reasoning_effort="low", max_completion_tokens=2500)
+    try:
+        data = _send(body)
+    except urllib.error.HTTPError as e:
+        if e.code != 400:
+            raise
+        # some models refuse temperature or JSON mode: ask again with the plainest request
+        body.pop("temperature", None)
+        try:
+            data = _send(body)
+        except urllib.error.HTTPError as e2:
+            if e2.code != 400:
+                raise
+            body.pop("response_format", None)
+            data = _send(body)
     text = data["choices"][0]["message"].get("content") or ""
     u = data.get("usage") or {}
     n_in = int(u.get("prompt_tokens") or sum(len(m["content"]) for m in messages) // 4)

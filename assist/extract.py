@@ -3,6 +3,7 @@
 Rules are tight regexes over the pack's message shapes. Free text that no rule recognises is
 simply not a signal (and is never quoted), which keeps injected text out of briefs.
 """
+from __future__ import annotations
 import json
 import re
 
