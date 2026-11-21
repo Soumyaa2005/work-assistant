@@ -1,0 +1,9 @@
+[project]
+name = "assist"
+version = "0.2.0"
+description = "Meeting brief helper for BuildSprint R3"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
