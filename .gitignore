@@ -1,11 +1,9 @@
+*.pyc
+.assist_llm_cache.json
+.assist_store.sqlite
 .env
+.pytest_cache/
 .venv/
 __pycache__/
-*.pyc
-.assist_store.sqlite
-.pytest_cache/
 runs/
-BuildSprint-R3-candidate/
-BuildSprint-R3-candidate/
-.assist_llm_cache.json
-BuildSprint-R3-candidate.zip
+PREP_NOTES.md
