@@ -158,7 +158,16 @@ def _sheet(conn, rec):
 
 # ---------------------------------------------------------------- chat and mail
 _NAME = r"(?-i:[A-Z][a-z]+)"
+_WHO = r"(?:" + _NAME + r"|(?-i:I|We)\b)"
 _TAKEOVER = [
+    re.compile(r"\b(?P<new>" + _WHO + r")(?:'m|'ve|'ll)?\s+(?:am\s+|are\s+|is\s+|will\s+|has\s+|have\s+|now\s+)?(?:takes?|taking|taken|took)\s+over\s+(?P<subj>.+?)"
+               r"(?:\s+from\s+(?P<old>" + _NAME + r"))?(?=\s*[.,;!]|\s*$|\s+(?:and|since|as|starting|effective|with)\b)"),
+    re.compile(r"(?P<subj>billing|invoicing|accounts)(?:\s+\w+){0,2}?\s+(?:is|are|now)\s+(?:now\s+)?with\s+(?P<new>me|" + _NAME + r")\b"
+               r"(?:.*?(?P<old>" + _NAME + r")\s+handed)?", re.I),
+    re.compile(r"\bhand(?:ing|ed|s)?\s+over\s+(?:the\s+)?(?P<subj>[a-z ]+?)\s+to\s+(?P<new>" + _NAME + r"|me)\b"
+               r"(?:\s+from\s+(?P<old>" + _NAME + r"))?", re.I),
+    re.compile(r"(?P<subj>billing|invoicing|accounts)\s+(?:now\s+)?(?:moves?|moved|goes|went|shifts?|shifted)\s+from\s+(?P<old>" + _NAME + r")"
+               r"\s+to\s+(?P<new>me|" + _NAME + r")\b", re.I),
     re.compile(r"(?P<new>" + _NAME + r")\s+(?:is\s+|will\s+|has\s+|'ll\s+|now\s+)?(?:takes?|taking|taken|took)\s+over\s+(?P<subj>.+?)"
                r"(?:\s+from\s+(?P<old>" + _NAME + r"))?(?=\s*[.,;!]|\s*$|\s+(?:and|since|as|starting|effective|with)\b)"),
     re.compile(r"(?:hand(?:ing|ed|s)?|pass(?:ing|ed|es)?)\s+(?P<subj>[a-z ]+?)\s+over\s+to\s+(?P<new>" + _NAME + r")"
@@ -170,7 +179,7 @@ _NOT_IT = r"(?!(?:it|this|that|them|things?)\b)"
 _MOVE = re.compile(r"(?i)\b(?:move|moving|moved|push|pushing|pushed|shift|shifting|shifted|reschedul(?:e|ed|ing)|postpon(?:e|ed|ing)|bring(?:ing)?\s+forward)"
                    r"\s+(?:the\s+)?" + _NOT_IT + r"(?P<what>[a-z]+(?: [a-z]+)?)\s+(?:up\s+|back\s+|out\s+)?to\s+(?:the\s+)?(?P<date>" + DATE + r")")
 _LAUNCH_IS = re.compile(r"(?i)\b(?P<what>launch)(?:\s+date)?\s+(?:is\s+(?:now\s+)?|will\s+(?:now\s+)?be\s+(?:on\s+)?|"
-                        r"(?:has\s+been\s+|was\s+|got\s+)?(?:moved|pushed|shifted|rescheduled)\s+to\s+|now\s+(?:on\s+)?)(?P<date>" + DATE + r")")
+                        r"(?:has\s+been\s+|was\s+|got\s+)?(?:moved|pushed|shifted|rescheduled|postponed)\s+(?:to|for)\s+|(?:is\s+)?(?:moving|pushing|shifting)\s+to\s+|now\s+(?:on\s+)?)(?P<date>" + DATE + r")")
 _GREET = r"(?:(?:hi|hello|hey)\b[^,.!\n]{0,25}[,.!]?\s*)?"
 _DELIVER = [
     re.compile(r"(?i)^" + _GREET + r"(?:sharing|sending|attaching|attached|sent|here(?:'s| is| are)|please find(?: attached)?|enclosed)\s+(?P<what>.+?)\s+as promised"),
@@ -249,6 +258,8 @@ def _extract_text(conn, rec, body) -> bool:
     if t:
         new_first, subj_text, old_first = t
         subj = "billing" if "billing" in subj_text.lower() else re.sub(r"\W+", "_", subj_text.lower())
+        if new_first.lower() in ("i", "we", "me"):
+            new_first = pack.first_name(rec["author"])
         new_name, new_id = _person(new_first, "accounts")
         if old_first:
             old_name, _ = _person(old_first, "accounts")
