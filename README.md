@@ -29,6 +29,14 @@ Tests (build a tiny pack and drive the real CLI):
 python3 -m pytest tests -q
 ```
 
+## Demo page
+
+```
+python3 ui.py --pack /path/to/BuildSprint-R3-candidate
+```
+
+Opens http://127.0.0.1:8765 (standard library only). Pick a person, ingest through a day, then get a brief, ask, forget, or compare the same question for two people. Every button runs the real CLI, cited record ids are clickable (a record the person may not see shows as hidden), and a panel shows what is remembered for that person and the session's token total. It is a demo aid only; the scored program is `my_solution.py`.
+
 ## Model and tokens
 
 The rules do all the work by default. There is an optional model fallback for wording the rules do not know, off unless you set a key:
