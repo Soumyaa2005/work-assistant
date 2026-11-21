@@ -6,7 +6,7 @@ import json
 import re
 import time
 
-from . import pack
+from . import llm, pack
 from .db import rec_dict
 from .memory import forget_sets, is_forgotten, text_forgotten
 from .text import first_sentence, sentences, stem, terms, tokens
@@ -19,7 +19,9 @@ _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 
 
 def _usage(t0):
-    return {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "ms": int((time.perf_counter() - t0) * 1000)}
+    u = llm.usage()
+    u["ms"] = int((time.perf_counter() - t0) * 1000)
+    return u
 
 
 class Ctx:
@@ -297,32 +299,20 @@ def retrieve(ctx: Ctx) -> dict:
 
 
 # ---------------------------------------------------------------- entry
-def ask(conn, person: str, at: str, question: str) -> dict:
-    t0 = time.perf_counter()
-    ctx = Ctx(conn, person, at, question)
-    out = {"answer": None, "matched": [], "clarify": None, "refused": None}
-
-    def finish(res: dict) -> dict:
-        out.update({k: v for k, v in res.items() if k in out})
-        a = out["answer"]
-        if a and text_forgotten(person, a["text"], ctx.fsets):
-            out.update(answer={"text": "I have nothing on that.", "sources": []}, matched=[])
-        out["usage"] = _usage(t0)
-        return out
-
+def _resolve(ctx: Ctx, person: str) -> dict:
     r = said_about_me(ctx)
     if r:
-        return finish(r)
+        return (r)
     if pack.org_of(person) != "org_kp":
-        return finish(retrieve(ctx))        # clients, tasks and facts belong to Kitepoint only
+        return (retrieve(ctx))        # clients, tasks and facts belong to Kitepoint only
     tasks = weekday_tasks(ctx)
     if tasks is not None:
         if len(tasks) > 1:
-            return finish({"clarify": {"question": "Which one: " + " or ".join(t["title"] for t in tasks) + "?",
+            return ({"clarify": {"question": "Which one: " + " or ".join(t["title"] for t in tasks) + "?",
                                        "options": [{"id": t["task_id"], "text": t["title"]} for t in tasks]}})
         if len(tasks) == 1:
             t = task_state(ctx, tasks[0]["task_id"])
-            return finish(task_answer(ctx, t, (None, None)))
+            return (task_answer(ctx, t, (None, None)))
     amb = person_in_question(ctx)
     client, phrase = client_of_question(ctx)
     if amb:
@@ -330,18 +320,47 @@ def ask(conn, person: str, at: str, question: str) -> dict:
         if pid:
             nm = pack.name_of(pid)
             role = pack.people()[pid].get("role", "")
-            return finish({"answer": {"text": f"That is {nm} ({pid}), {role}.", "sources": src},
+            return ({"answer": {"text": f"That is {nm} ({pid}), {role}.", "sources": src},
                            "matched": [{"phrase": amb["phrase"], "id": pid, "sources": src}] +
                                       ([{"phrase": phrase, "id": client, "sources": []}] if client else [])})
-        return finish({"clarify": {"question": f"Which {amb['phrase']}?",
+        return ({"clarify": {"question": f"Which {amb['phrase']}?",
                                    "options": [{"id": c, "text": pack.name_of(c)} for c in amb["cands"]]}})
     task, ties = find_task(ctx, client)
     if task:
         if len(ties) > 1:
-            return finish({"clarify": {"question": "Which one: " + " or ".join(t["raw"]["title"] for t in ties) + "?",
+            return ({"clarify": {"question": "Which one: " + " or ".join(t["raw"]["title"] for t in ties) + "?",
                                        "options": [{"id": t["raw"]["task_id"], "text": t["raw"]["title"]} for t in ties]}})
-        return finish(task_answer(ctx, task, (client, phrase)))
+        return (task_answer(ctx, task, (client, phrase)))
     f = fact_answer(ctx, client)
     if f:
-        return finish(f)
-    return finish(retrieve(ctx))
+        return (f)
+    return (retrieve(ctx))
+
+
+def _nothing(res: dict) -> bool:
+    a = res.get("answer")
+    return bool(a) and not a.get("sources") and not res.get("clarify") and not res.get("refused")
+
+
+def ask(conn, person: str, at: str, question: str) -> dict:
+    t0 = time.perf_counter()
+    ctx = Ctx(conn, person, at, question)
+    out = {"answer": None, "matched": [], "clarify": None, "refused": None}
+    res = _resolve(ctx, person)
+    if _nothing(res) and pack.org_of(person) == "org_kp" and llm.enabled():
+        by_id = {c["id"]: c["name"] for c in pack.clients()}
+        rew = llm.canonical_question(question, list(by_id.values())) if by_id else None
+        if rew:
+            q2, phrase = rew
+            res2 = _resolve(Ctx(conn, person, at, q2), person)
+            if res2.get("answer") and res2["answer"].get("sources"):
+                for m in res2.get("matched") or []:
+                    if phrase and by_id.get(m.get("id"), "").lower() == (m.get("phrase") or "").lower():
+                        m["phrase"] = phrase
+                res = res2
+    out.update({k: v for k, v in res.items() if k in out})
+    a = out["answer"]
+    if a and text_forgotten(person, a["text"], ctx.fsets):
+        out.update(answer={"text": "I have nothing on that.", "sources": []}, matched=[])
+    out["usage"] = _usage(t0)
+    return out

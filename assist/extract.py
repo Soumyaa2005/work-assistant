@@ -6,7 +6,7 @@ simply not a signal (and is never quoted), which keeps injected text out of brie
 import json
 import re
 
-from . import pack
+from . import llm, pack
 from .text import DATE, INJECTION, cap, norm_date, terms
 
 _PERSON_NAMES = None
@@ -225,11 +225,26 @@ def _same_promise(a: str, b: str) -> bool:
     return len(ta & tb) / min(len(ta), len(tb)) >= 0.6
 
 
+_CUE = re.compile(r"(?i)\b(over|handl\w*|owns?|owner|sambhal\w*|launch\w*|push\w*|mov\w*|postpon\w*|reschedul\w*|promis\w*|"
+                  r"will|tak|by|tomorrow|kal|parso|sharing|shared|attach\w*|sending|sent)\b|'ll")
+
+
 def _msg(conn, rec):
     body = (rec.get("body") or "").strip()
-    client = rec.get("client")
-    if not client or body.endswith("?"):
+    if not rec.get("client") or body.endswith("?"):
         return
+    if _extract_text(conn, rec, body):
+        return
+    if llm.enabled() and _CUE.search(body):
+        when = pack.local_date(rec["at"], rec["author"]) if rec["author"] in pack.people() else pack.parse_ts(rec["at"]).date()
+        for line in llm.canonical_message(body, f"{when:%A %Y-%m-%d}"):
+            _extract_text(conn, rec, line)
+
+
+def _extract_text(conn, rec, body) -> bool:
+    """Run the message rules on one piece of text. True if any rule fired."""
+    client = rec.get("client")
+    hit = False
     t = _takeover(body)
     if t:
         new_first, subj_text, old_first = t
@@ -243,6 +258,7 @@ def _msg(conn, rec):
         add_fact(conn, rec, subj, new_name, new_id)
         text = f"{new_name} now owns {subj_text}" + (f" (was {old_name})" if old_name else "")
         add_signal(conn, rec, "owner", subj, 1, text, old_name, new_name, subj)
+        hit = True
     m = _MOVE.search(body) or _LAUNCH_IS.search(body)
     if m:
         what = m.group("what").lower()
@@ -254,6 +270,7 @@ def _msg(conn, rec):
             text = f"{cap(what)} moved from {old} to {new}" if old else f"{cap(what)} moved to {new}"
             add_fact(conn, rec, subj, new)
             add_signal(conn, rec, "date", subj, 1, text, old, new, what)
+            hit = True
     for rx in _DELIVER:
         m = rx.match(body)
         if m:
@@ -265,6 +282,7 @@ def _msg(conn, rec):
                 conn.execute("UPDATE promises SET delivered_by=? WHERE id=?", (rec["id"], row["id"]))
             add_signal(conn, rec, "delivered", f"delivered:{what.lower()}", 3,
                        f"{pack.first_name(rec['author'])} delivered {what}", None, None, what)
+            hit = True
             break
     for rx in (_P_KAL, _P_NEXT, _P_WDTAK, _P_EOD, _P_BY):
         m = rx.search(body)
@@ -274,7 +292,9 @@ def _msg(conn, rec):
             if due and what:
                 conn.execute("INSERT INTO promises(record_id,owner,what,due,client,at) VALUES(?,?,?,?,?,?)",
                              (rec["id"], rec["author"], what, due, client, rec["at"]))
+                hit = True
             break
+    return hit
 
 
 # ---------------------------------------------------------------- entry point

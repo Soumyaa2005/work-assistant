@@ -2,7 +2,7 @@
 import json
 import re
 
-from . import pack
+from . import llm, pack
 from .text import DATE, NUMBER_WORDS, norm_date, stem, terms
 
 _FORGET_NOISE = {"forget", "said", "mention", "mentioned", "everything", "anything", "wrote", "told", "regard", "regarding"}
@@ -80,6 +80,9 @@ def apply_feedback(conn, entries: list[dict]) -> None:
         if kind == "preference":
             if not conn.execute("SELECT 1 FROM prefs WHERE person=? AND words=?", (person, words)).fetchone():
                 conn.execute("INSERT INTO prefs(person,day,words) VALUES(?,?,?)", (person, day, words))
+            if not _parse_pref(words, {"max_changed": None, "blockers_first": False, "skip": set()}) and llm.enabled():
+                for line in llm.canonical_feedback(words):         # canonical rewrite, then the same rules read it
+                    conn.execute("INSERT INTO prefs(person,day,words) VALUES(?,?,?)", (person, day, line))
         elif kind == "correction":
             _correction(conn, e)
         elif kind == "verdict":
@@ -91,6 +94,14 @@ def apply_feedback(conn, entries: list[dict]) -> None:
 def _correction(conn, e):
     from .extract import _person   # local import: extract needs pack, not memory
     words, person = e.get("words", ""), e.get("person")
+    m = _corr_match(words)
+    if not m and not re.search(r"(?i)\blaunch\b.{0,40}?(" + DATE + r")", words) and llm.enabled():
+        for line in llm.canonical_feedback(words):
+            if _corr_match(line) or re.search(r"(?i)\blaunch\b.{0,40}?(" + DATE + r")", line):
+                e = {**e, "parse_words": line}
+                break
+    stored_words = words
+    words = e.get("parse_words", words)
     m = _corr_match(words)
     client = subject = value = vid = None
     d = re.search(r"(?i)\blaunch\b.{0,40}?(" + DATE + r")", words)
@@ -110,30 +121,39 @@ def _correction(conn, e):
             client = ev["client"] if ev else None
         client = client or (row["client"] if row else None)
     conn.execute("INSERT INTO corrections(person,day,meeting,words,client,subject,value,value_id) VALUES(?,?,?,?,?,?,?,?)",
-                 (person, e.get("day"), e.get("meeting"), words, client, subject, value, vid))
+                 (person, e.get("day"), e.get("meeting"), stored_words, client, subject, value, vid))
 
 
 # ---------------------------------------------------------------- preference parsing
+def _parse_pref(w: str, out: dict) -> bool:
+    """Read one preference sentence into `out`. True if anything was understood."""
+    got = False
+    n = None
+    for rx in _NUM_PREF:
+        mm = rx.search(w)
+        if mm:
+            v = mm.group(1).lower()
+            n = int(v) if v.isdigit() else NUMBER_WORDS[v]
+            break
+    if n:
+        out["max_changed"] = n
+        got = True
+    if re.search(r"blocker|blocked", w, re.I) and re.search(r"first|top|start|lead|upfront|up front|front|before", w, re.I):
+        out["blockers_first"] = True
+        got = True
+    m = re.match(r"\s*(?:skip|ignore|exclude|hide|leave out|stop (?:showing|mentioning|including)|"
+                 r"(?:don'?t|do not) (?:show|include|mention|tell me about|bring up)|i (?:don'?t|do not) care about|no)\s+(.+?)"
+                 r"(?:\s+in my|\s+from my|\s+please|[.!]|$)", w, re.I)
+    if m and not (n and re.match(r"\s*no\b", w, re.I)):
+        out["skip"] |= terms(m.group(1))
+        got = True
+    return got
+
+
 def person_prefs(conn, person: str) -> dict:
     out = {"max_changed": None, "blockers_first": False, "skip": set()}
     for r in conn.execute("SELECT words FROM prefs WHERE person=? ORDER BY id", (person,)):
-        w = r["words"]
-        n = None
-        for rx in _NUM_PREF:
-            mm = rx.search(w)
-            if mm:
-                v = mm.group(1).lower()
-                n = int(v) if v.isdigit() else NUMBER_WORDS[v]
-                break
-        if n:
-            out["max_changed"] = n
-        if re.search(r"blocker|blocked", w, re.I) and re.search(r"first|top|start|lead|upfront|up front|front|before", w, re.I):
-            out["blockers_first"] = True
-        m = re.match(r"\s*(?:skip|ignore|exclude|hide|leave out|stop (?:showing|mentioning|including)|"
-                     r"(?:don'?t|do not) (?:show|include|mention|tell me about|bring up)|i (?:don'?t|do not) care about|no)\s+(.+?)"
-                     r"(?:\s+in my|\s+from my|\s+please|[.!]|$)", w, re.I)
-        if m and not (n and re.match(r"\s*no\b", w, re.I)):
-            out["skip"] |= terms(m.group(1))
+        _parse_pref(r["words"], out)
     return out
 
 

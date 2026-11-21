@@ -31,7 +31,19 @@ python3 -m pytest tests -q
 
 ## Model and tokens
 
-No language model is used. Every output reports `input_tokens: 0`, `output_tokens: 0`, `cost_usd: 0` and the real time in ms. Nothing is estimated.
+The rules do all the work by default. There is an optional model fallback for wording the rules do not know, off unless you set a key:
+
+```
+export GROQ_API_KEY=your-key
+```
+
+- Model: `openai/gpt-oss-20b` on Groq (OpenAI-compatible API, standard library `urllib`, nothing to install). Change with `ASSIST_LLM_MODEL`, `ASSIST_LLM_URL`. `ASSIST_LLM=0` switches it off even with a key set.
+- It is only called when the rules found nothing: a chat or mail that looks like a handover, date move, delivery or promise; a preference or correction the rules could not read; a question the rules could not answer. Records flagged as prompt injection never reach it.
+- It never answers and never writes facts or citations. It rewrites the text into short canonical sentences, each line is checked so that every name, date and content word comes from the original text, and then the same rules read it. Citations always point at the real record. A question rewrite only widens what the rules look up; the asker's visibility checks still apply.
+- Tokens: counted from the API's `usage` (prompt and completion tokens), summed per process. If the API gives none, characters / 4. Cost uses Groq's list price, $0.075 per million input and $0.30 per million output tokens (`ASSIST_PRICE_IN`, `ASSIST_PRICE_OUT` to change; check the current price). `ask` reports its own tokens in `usage`. `ingest` reports any tokens it used in an extra `usage` field. Replies read from the local cache (`.assist_llm_cache.json`) cost nothing and report 0.
+- At most 80 model calls per process, 8 second timeout. After two failures in a process it stops trying and answers with rules only.
+- No key: every call reports 0 tokens, because no model ran.
+- No key is stored in the repo.
 
 ## Results on days 1 to 5
 
@@ -51,11 +63,11 @@ With the organisers' scorer: 85 out of 85 (briefs 20/20, answers 15/15, honesty 
 
 ## Known gaps
 
-- Messages are understood with regular expressions over the shapes in the pack ("kal tak", "takes over ... from", "move the launch to"). A new phrasing is ignored, not guessed. A model would help most here.
+- Messages are understood with regular expressions ("kal tak", "takes over ... from", "move the launch to", and many variants). A phrasing that neither the rules nor the optional model fallback can ground in the text is ignored, not guessed. The fallback has only been tested against a fake model, not the live API.
 - Nicknames: initials and name prefixes are worked out from client ids. City hints ("London account", "Mumbai client") use a small city-to-country table matched against client contact email domains.
 - Internal meetings (no client) always return `nothing_new`.
 - Asks outside tasks, billing, launch date and people fall back to keyword search and answer with one sentence from the best record.
 
 ## AI assistants used
 
-Claude (Anthropic) helped write the code and tests.
+Claude (Anthropic) helped write the code and tests. The optional runtime fallback uses gpt-oss-20b via Groq.

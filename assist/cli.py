@@ -2,7 +2,7 @@ import argparse
 import json
 import sys
 
-from . import brief, db, extract, memory, pack
+from . import brief, db, extract, llm, memory, pack
 from .ask import ask
 
 
@@ -22,7 +22,10 @@ def ingest(day: int) -> dict:
         memory.apply_feedback(conn, pack.day_feedback(day - 1))   # feedback written on day N-1 arrives now
     db.meta_set(conn, f"day{day}", 1)
     conn.commit()
-    return {"ok": True, "records": len(recs)}
+    out = {"ok": True, "records": len(recs)}
+    if llm.USAGE["calls"]:
+        out["usage"] = llm.usage()
+    return out
 
 
 def main(argv=None) -> int:

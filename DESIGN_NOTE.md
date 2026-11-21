@@ -6,7 +6,7 @@ At ingest I turn each record into a small "signal" if it is one of the things th
 
 For a meeting I take the signals for that client since the person's previous meeting with the same client (from the start of that day, in their own time zone; if there was none, from the start). If a task moved twice I print one line, old value to latest value. Lines are ordered by importance: client-level facts and blockers first, then task changes, then deliveries. If the person asked for "max N" or "blockers first" I apply that. Promises are open promises for that client that nobody has closed with a delivery. If there are no signals the brief is `nothing_new` with empty lists.
 
-No model is used, so nothing is sent to one and token use is zero. The risk is the reverse of a model's: a phrasing my rules do not know is silently missed.
+The rules do the work and need no model, so token use is zero by default. The risk is the reverse of a model's: a phrasing my rules do not know is silently missed. To limit that, an optional small model (gpt-oss-20b) is called only when the rules found nothing. It only rewrites odd wording into the short sentences the rules already read, and I reject any rewritten line whose names, dates or words are not in the original text. It never writes an answer or a citation.
 
 ## How I save memory and decide who can see it
 
@@ -26,4 +26,5 @@ Task state is rebuilt from the real changes (created, owner, due, status) in tim
 - Quote text I cannot cite, or cite a record the person cannot read.
 - Guess. An unclear question gets a clarifying question with options; a question I cannot answer gets "I have nothing on that."
 - Hardcode answers or client nicknames from the five visible days.
+- Send a record to the model if it looks like an injection, or let the model's output carry facts the record did not contain.
 - Claim the 85/85 on days 1 to 5 predicts the hidden days. It does not.
