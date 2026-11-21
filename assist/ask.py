@@ -6,7 +6,7 @@ import json
 import re
 import time
 
-from . import llm, pack
+from . import embed, llm, pack
 from .db import rec_dict
 from .memory import forget_sets, is_forgotten, text_forgotten
 from .text import first_sentence, sentences, stem, terms, tokens
@@ -20,6 +20,9 @@ _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 
 def _usage(t0):
     u = llm.usage()
+    e = embed.usage()
+    u["input_tokens"] += e["input_tokens"]
+    u["cost_usd"] = round(u["cost_usd"] + e["cost_usd"], 6)
     u["ms"] = int((time.perf_counter() - t0) * 1000)
     return u
 
@@ -156,13 +159,26 @@ def find_task(ctx: Ctx, client: str | None) -> tuple[dict | None, list[dict]]:
             bonus = 0.2 if client and raw.get("client") == client else 0
             scored.append((hit + bonus, tid))
     if not scored:
-        return None, []
+        return _semantic_task(ctx, titles, client)
     scored.sort(reverse=True)
     best = [t for s, t in scored if s == scored[0][0]]
     if len(best) > 1 and client:
         narrowed = [t for t in best if titles[t].get("client") == client]
         best = narrowed or best
     return (task_state(ctx, best[0]), [task_state(ctx, t) for t in best]) if best else (None, [])
+
+
+_TASK_INTENT = re.compile(r"\b(who|owner|owns|handles|when|due|deadline|status|done|finished|progress|ready)\b", re.I)
+
+
+def _semantic_task(ctx: Ctx, titles: dict, client: str | None) -> tuple[dict | None, list[dict]]:
+    """Fallback when no title shares enough words with the question. Only visible tasks are candidates."""
+    if not embed.enabled() or not _TASK_INTENT.search(ctx.q):
+        return None, []
+    pool = {tid: raw for tid, raw in titles.items() if not client or raw.get("client") == client} or titles
+    ids = embed.best_matches(ctx.conn, ctx.q, [(tid, raw.get("title", "")) for tid, raw in pool.items()])
+    states = [t for t in (task_state(ctx, i) for i in ids) if t]
+    return (states[0], states) if states else (None, [])
 
 
 def task_answer(ctx: Ctx, task: dict, client_phrase) -> dict:

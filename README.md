@@ -79,3 +79,17 @@ With the organisers' scorer: 85 out of 85 (briefs 20/20, answers 15/15, honesty 
 ## AI assistants used
 
 Claude (Anthropic) helped write the code and tests. The optional runtime fallback uses gpt-oss-20b via Groq.
+
+## Optional embeddings (semantic matching)
+
+Off unless `EMBED_API_KEY` is set. It does one job: when no task title shares enough words with a "who / when / status" question, the titles of the tasks the asker may already see are ranked by embedding similarity (`assist/embed.py`).
+
+```
+export EMBED_API_KEY=your-key      # any OpenAI-compatible /embeddings endpoint
+```
+
+- Defaults: `EMBED_URL` (OpenAI), `EMBED_MODEL=text-embedding-3-small`. `ASSIST_EMBED=0` switches it off.
+- Vectors are cached in the SQLite store (table `embeddings`), so a text is embedded once. Cosine similarity is computed in plain Python; the candidate set is tiny, so no separate vector database is needed.
+- Candidates are built after the visibility check, so a task the asker cannot see is never embedded or matched. A weak match (below `EMBED_MIN_SCORE`) or a near tie (within `EMBED_MIN_GAP`) returns nothing or asks which one, never a guess.
+- Embedding tokens are added to the `usage` of the `ask` that used them (price `EMBED_PRICE_IN`, per million tokens; check the current price). At most 20 calls per process; after two failures it stops and the rules answer alone.
+- Not used for briefs, ingest or forget, and not needed for the scored days. Tests use a fake embedder (`tests/test_embed.py`), so no network is needed.
