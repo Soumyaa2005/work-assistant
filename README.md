@@ -109,3 +109,15 @@ ASSIST_LLM=0 python3 scripts/probe_cases.py     # rules only
 
 All 25 pass with no key. A model is used only when a message looks like a change but no rule reads it.
 
+## Data leakage
+
+Everything shown to a person goes through `can_see()` (same company; `private` to the author; `restricted` to the readers). Three more rules close the indirect routes:
+
+- Text derived from a record ("Launch moved from X to Y", "(was Kavya)", "changed from X to Y") may only use earlier records that everyone who can read the new record can also read (`covers()` in `assist/extract.py`). A private note cannot show up as the "old value" of a public line.
+- A delivery closes a promise only if everyone who can see the promise can see the delivery.
+- Records that are not `team` visible, and records flagged as injection, are never sent to the model. Embedding candidates are built after the visibility check.
+
+`tests/test_leaks.py` has one test per route. `scripts/leak_sweep.py` checks a real pack: for every private, restricted or other-company sentence it runs every person's briefs and many questions and looks for that sentence in the output (`R3_PACK=/path/to/pack python3 scripts/leak_sweep.py`).
+
+A record missing its id, type or time, or a damaged JSON line, is skipped; the rest of the day is still read.
+

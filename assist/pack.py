@@ -29,7 +29,10 @@ def read_jsonl(path: str) -> list[dict]:
         for line in f:
             line = line.strip()
             if line:
-                out.append(json.loads(line))
+                try:
+                    out.append(json.loads(line))
+                except ValueError:
+                    continue                   # a damaged line is skipped, the rest of the file is still read
     return out
 
 

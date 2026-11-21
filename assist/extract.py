@@ -41,14 +41,46 @@ def add_fact(conn, rec, subject, value, value_id=None, at=None):
                  (rec.get("client"), subject, value, value_id, at or rec["at"], rec["id"]))
 
 
-def current_fact(conn, client, subject, before=None):
+def covers(other: dict, rec: dict) -> bool:
+    """True if everyone who may read `rec` may also read `other`. Text derived from `rec` (it goes to rec's readers)
+    may only use `other` when this holds; otherwise a private note could leak through a public line."""
+    if (other.get("org") or "org_kp") != (rec.get("org") or "org_kp"):
+        return False
+    vo, vr = other.get("visibility") or "team", rec.get("visibility") or "team"
+    if vo == "team":
+        return True
+    if vr == "team":
+        return False
+    ro = other.get("readers") or []
+    if isinstance(ro, str):
+        ro = json.loads(ro or "[]")
+    rr = rec.get("readers") or []
+    if vo == "private":
+        return vr == "private" and rec.get("author") == other.get("author")
+    if vr == "private":
+        return rec.get("author") in ro
+    return set(rr) <= set(ro)
+
+
+def _record(conn, rid):
+    r = conn.execute("SELECT org, visibility, readers, author FROM records WHERE id=?", (rid,)).fetchone()
+    return dict(r) if r else None
+
+
+def current_fact(conn, client, subject, before=None, reader=None):
+    """Newest earlier fact. With `reader` (the record whose text will use it) only facts that record's readers may see."""
     q = "SELECT * FROM facts WHERE client=? AND subject=?"
     args = [client, subject]
     if before:
         q += " AND at<=?"
         args.append(before)
-    r = conn.execute(q + " ORDER BY at DESC, id DESC LIMIT 1", args).fetchone()
-    return dict(r) if r else None
+    for r in conn.execute(q + " ORDER BY at DESC, id DESC", args):
+        if reader is None:
+            return dict(r)
+        src = _record(conn, r["record_id"])
+        if src and covers(src, reader):
+            return dict(r)
+    return None
 
 
 # ---------------------------------------------------------------- tasks
@@ -122,9 +154,18 @@ def _doc_pairs(body: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def _prev_version(conn, rec, typ, key):
+    """Previous version of the same doc or sheet that this version's readers may also read."""
+    for r in conn.execute(f"SELECT id, raw FROM records WHERE type=? AND json_extract(raw,'$.{key}')=? AND id!=? AND at<? "
+                          "ORDER BY at DESC", (typ, rec.get(key), rec["id"], rec["at"])):
+        src = _record(conn, r["id"])
+        if src and covers(src, rec):
+            return r
+    return None
+
+
 def _doc(conn, rec):
-    prev = conn.execute("SELECT raw FROM records WHERE type='doc' AND json_extract(raw,'$.doc_id')=? AND id!=? "
-                        "AND at<? ORDER BY at DESC LIMIT 1", (rec.get("doc_id"), rec["id"], rec["at"])).fetchone()
+    prev = _prev_version(conn, rec, "doc", "doc_id")
     old = _doc_pairs(json.loads(prev["raw"])["body"]) if prev else {}
     for subj, (label, val) in _doc_pairs(rec["body"]).items():
         if old.get(subj, (None, None))[1] == val:
@@ -146,8 +187,7 @@ def _doc(conn, rec):
 
 
 def _sheet(conn, rec):
-    prev = conn.execute("SELECT raw FROM records WHERE type='sheet' AND json_extract(raw,'$.sheet_id')=? AND id!=? "
-                        "AND at<? ORDER BY at DESC LIMIT 1", (rec.get("sheet_id"), rec["id"], rec["at"])).fetchone()
+    prev = _prev_version(conn, rec, "sheet", "sheet_id")
     if not prev:
         return
     old = json.loads(prev["raw"]).get("cells") or {}
@@ -252,7 +292,7 @@ def _msg(conn, rec):
         return
     if _extract_text(conn, rec, body):
         return
-    if llm.enabled() and _CUE.search(body):
+    if llm.enabled() and (rec.get("visibility") or "team") == "team" and _CUE.search(body):
         when = pack.local_date(rec["at"], rec["author"]) if rec["author"] in pack.people() else pack.parse_ts(rec["at"]).date()
         for line in llm.canonical_message(body, f"{when:%A %Y-%m-%d}"):
             _extract_text(conn, rec, line)
@@ -272,7 +312,7 @@ def _extract_text(conn, rec, body) -> bool:
         if old_first:
             old_name, _ = _person(old_first, "accounts")
         else:
-            cur = current_fact(conn, client, subj, rec["at"])
+            cur = current_fact(conn, client, subj, rec["at"], rec)
             old_name = cur["value"] if cur else None
         add_fact(conn, rec, subj, new_name, new_id)
         text = f"{new_name} now owns {subj_text}" + (f" (was {old_name})" if old_name else "")
@@ -283,7 +323,7 @@ def _extract_text(conn, rec, body) -> bool:
         what = m.group("what").lower()
         new = norm_date(m.group("date"))
         subj = "launch" if "launch" in what else re.sub(r"\W+", "_", what)
-        cur = current_fact(conn, client, subj, rec["at"])
+        cur = current_fact(conn, client, subj, rec["at"], rec)
         old = cur["value"] if cur else None
         if new and new != old:
             text = f"{cap(what)} moved from {old} to {new}" if old else f"{cap(what)} moved to {new}"
@@ -294,9 +334,10 @@ def _extract_text(conn, rec, body) -> bool:
         m = rx.match(body)
         if m:
             what = m.group("what").strip()
-            rows = conn.execute("SELECT id, what FROM promises WHERE client=? AND delivered_by IS NULL AND owner=? ORDER BY at",
+            rows = conn.execute("SELECT id, what, record_id FROM promises WHERE client=? AND delivered_by IS NULL AND owner=? ORDER BY at",
                                 (client, rec["author"])).fetchall()
-            row = next((r for r in rows if _same_promise(what, r["what"])), None)
+            row = next((r for r in rows if _same_promise(what, r["what"])
+                        and covers(rec, _record(conn, r["record_id"]) or {"visibility": "restricted", "readers": []})), None)
             if row:
                 conn.execute("UPDATE promises SET delivered_by=? WHERE id=?", (rec["id"], row["id"]))
             add_signal(conn, rec, "delivered", f"delivered:{what.lower()}", 3,

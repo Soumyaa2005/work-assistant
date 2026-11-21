@@ -11,14 +11,19 @@ def ingest(day: int) -> dict:
     conn = db.connect(fresh=(day == 1))
     if db.meta_get(conn, f"day{day}"):
         return {"ok": True, "skipped": "already ingested"}
-    recs = sorted(pack.day_records(day), key=lambda r: (r["at"], r["id"]))
+    # a record missing its id, type or time cannot be ordered or cited: skip it, never abort the day
+    recs = [r for r in pack.day_records(day) if isinstance(r, dict) and r.get("id") and r.get("type") and r.get("at")]
+    recs.sort(key=lambda r: (str(r["at"]), str(r["id"])))
     for r in recs:
         conn.execute(
             "INSERT OR REPLACE INTO records(id,org,type,at,author,client,visibility,readers,day,raw) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (r["id"], r.get("org", "org_kp"), r["type"], r["at"], r.get("author"), r.get("client"),
              r.get("visibility", "team"), json.dumps(r.get("readers") or []), day, json.dumps(r, ensure_ascii=False)))
     for r in recs:
-        extract.derive(conn, r)
+        try:
+            extract.derive(conn, r)
+        except Exception as e:                     # one odd record must not cost the rest of the day
+            print(f"assist: skipped signals for {r.get('id')}: {e!r}", file=sys.stderr)
     if day > 1:
         memory.apply_feedback(conn, pack.day_feedback(day - 1))   # feedback written on day N-1 arrives now
     db.meta_set(conn, f"day{day}", 1)

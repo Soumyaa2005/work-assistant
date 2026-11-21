@@ -210,3 +210,24 @@ def test_probe_cases_pass_rules_only(monkeypatch):
 def test_injection_cues(text, flagged):
     from assist.text import INJECTION
     assert bool(INJECTION.search(text)) == flagged
+
+
+def test_malformed_records_do_not_abort_the_day(tmp_path):
+    good = chat(1, "2026-11-03T08:00:00Z", "I'll send the pricing sheet by Friday.")
+    bad = [{"id": "nodate", "org": "org_kp", "type": "chat", "author": "p02", "body": "x"}, {"type": "chat"}, {"id": "notype"},
+           {"id": "weird", "org": "org_kp", "type": "task", "at": "2026-11-03T08:00:00Z", "author": "p02", "client": NB, "change": "oops"}]
+    d1 = [ev(1, "2026-11-02T03:00:00Z", "2026-11-04T05:30:00Z")]
+    setup(tmp_path, {1: d1, 2: bad + [good, task("tx", "2026-11-03T09:00:00Z", "t-x", "Feed fix", "p02", "2026-11-09", "done", "status", "todo", "done")]}, {})
+    assert run(tmp_path, "ingest", "--day", "1")["ok"] and run(tmp_path, "ingest", "--day", "2")["ok"]
+    b = run(tmp_path, "brief", "--person", "p02", "--date", "2026-11-04")[0]
+    assert any("pricing sheet" in p["what"] for p in b["promises"])
+
+
+def test_a_damaged_line_does_not_lose_the_day(tmp_path):
+    d1 = [ev(1, "2026-11-02T03:00:00Z", "2026-11-04T05:30:00Z")]
+    setup(tmp_path, {1: d1, 2: []}, {})
+    good = json.dumps(chat(1, "2026-11-03T08:00:00Z", "I'll send the pricing sheet by Friday."))
+    done = json.dumps(task("tx", "2026-11-03T09:00:00Z", "t-x", "Feed fix", "p02", "2026-11-09", "done", "status", "todo", "done"))
+    (tmp_path / "data" / "days" / "day-02.jsonl").write_text('{"id": "broken", \n' + good + "\n" + done + "\nnot json\n")
+    run(tmp_path, "ingest", "--day", "1")
+    assert run(tmp_path, "ingest", "--day", "2")["records"] == 2

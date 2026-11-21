@@ -20,7 +20,7 @@ One SQLite file holds every record with its company, visibility and readers, plu
 
 Visibility is one function, `can_see()`: same company only; `private` only to the author; `restricted` only to the listed readers. Every read goes through it, including the sources of derived facts, the evidence used to pick which "Arjun" someone means, and the candidates for the embedding match. A forget hides records the person wrote about that topic for everyone, drops that person's own stored feedback on it, and a last check blocks any output that still carries the topic. It stays forgotten when later days are ingested.
 
-I found and fixed one leak while testing: a Brightwave user could read a Kitepoint billing fact because the fact lookup skipped the visibility check. There is a test for it.
+I found and fixed two leaks while testing. First, a Brightwave user could read a Kitepoint billing fact because the fact lookup skipped the visibility check. Second, a sweep over every private record showed an indirect route: a private chat moving the launch to "14 Nov" appeared to everyone as "Launch moved from 14 Nov to 20 Nov". Derived text may now only use earlier records that everyone who reads the new record can also read, and a delivery closes a promise only if its readers can see it. Records that are not team-visible never go to the model. Each route has a test, and `scripts/leak_sweep.py` checks a whole pack.
 
 ## How I know which information is newest
 
