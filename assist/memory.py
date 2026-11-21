@@ -59,6 +59,12 @@ _CORRS = [
     re.compile(r"(?i)\b(?P<subj>billing)\s+(?:is\s+|goes\s+to\s+|now\s+(?:is\s+)?|is\s+with\s+|now\s+with\s+)(?P<new>" + _N + r")(?:'s)?(?:\s+now)?"
                r"(?:[,.]?\s*not\s+(?P<old>" + _N + r"))?"),
     re.compile(r"(?i)\b(?:it'?s|it\s+is)\s+(?P<new>" + _N + r")[,]?\s+not\s+(?P<old>" + _N + r")[,]?\s+(?:for|on)\s+(?P<subj>[a-z ]+?)\s*[.!]?$"),
+    re.compile(r"(?i)\b(?P<subj>billing)\s+(?:has\s+|have\s+)?(?:moved|shifted|passed|gone|been\s+(?:moved|handed|passed))\s+(?:over\s+)?to\s+(?P<new>" + _N + r")"
+               r"(?:[,.]?\s*(?P<old>" + _N + r")\s+is\s+(?:off|out|no\s+longer)\b)?"),
+    re.compile(r"(?i)\b(?P<new>" + _N + r")\s+is\s+(?:now\s+)?the\s+(?P<subj>billing)\s+(?:person|owner|contact|lead|executive|guy)(?:\s+now)?"
+               r"(?:[,.]?\s*not\s+(?P<old>" + _N + r"))?"),
+    re.compile(r"(?i)\b(?:it'?s|it\s+is)\s+(?P<new>" + _N + r")\s+who\s+(?:does|handles|owns|manages|runs)\s+(?P<subj>billing)"
+               r"(?:[,.]?\s*not\s+(?P<old>" + _N + r"))?"),
 ]
 _NUM_PREF = [
     re.compile(r"\b(?:max(?:imum)?|at most|no more than|only|top|limit(?: to)?|keep (?:it |them )?(?:to|under|within)|just|up to)\s+(\d+|" + "|".join(NUMBER_WORDS) + r")\b", re.I),

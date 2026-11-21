@@ -28,8 +28,23 @@ def _usage(t0):
     return u
 
 
+_HINGLISH = [(re.compile(r"(?i)\bkaun\b"), "who"), (re.compile(r"(?i)\bkab\b"), "when"),
+             (re.compile(r"(?i)\b(?:dekhta|dekhti|sambhalta|sambhalti|sambhalte|dekhte)(?:\s+hai|\s+hain)?\b"), "handles"),
+             (re.compile(r"(?i)\b(?:ka|ki|ke)\b"), "")]
+
+
+def normalise_question(q: str) -> str:
+    """Turn the common Hinglish question words into English ones. English questions pass through unchanged."""
+    if not re.search(r"(?i)\b(kaun|kab|dekhta|dekhti|sambhal\w+)\b", q):
+        return q
+    for rx, rep in _HINGLISH:
+        q = rx.sub(rep, q)
+    return re.sub(r"\s+", " ", q).strip()
+
+
 class Ctx:
     def __init__(self, conn, person, at, question):
+        question = normalise_question(question)
         self.conn, self.person, self.at, self.q = conn, person, at, question
         self.fsets = forget_sets(conn)
         self.qterms = terms(question)

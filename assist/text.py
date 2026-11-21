@@ -15,7 +15,10 @@ INJECTION = re.compile(
     r"forget (all |your |any |previous |prior )?(instructions|rules)|override (your|all|any|previous|the) (instructions|rules|guidelines|settings|safeguards)|"
     r"\bmark\b.{0,40}\bas\b.{0,12}\b(at risk|healthy|approved|green|red)|system prompt|developer mode|jailbreak|"
     r"you must now|you are now|new instructions|act as (the |an? )|pretend (you|to)|"
-    r"reveal .{0,40}(private|confidential|secret|other client|other compan)|do not (tell|mention|follow)",
+    r"reveal .{0,40}(private|confidential|secret|other client|other compan)|do not (tell|mention|follow)|"
+    r"disregard\b.{0,40}\b(earlier|previous|prior|above|told)\b|\b(?:note|message|instructions?)\s+(?:to|for)\s+(?:the\s+)?(?:assistant|ai|bot|model|llm)\b|"
+    r"\b(?:assistant|ai|chatbot|llm)\b\s*[,:]\s*(?:please\s+)?(?:always|never|do|reply|respond|say|report|mark|ignore|forget|tell|answer|output)\b|"
+    r"\bplease\s+always\s+(?:report|say|answer|respond|reply|tell)\s+(?:that|everyone|the\s+reader)\b",
     re.I)
 
 _MON = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"

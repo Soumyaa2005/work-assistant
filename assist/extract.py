@@ -161,6 +161,8 @@ def _sheet(conn, rec):
 _NAME = r"(?-i:[A-Z][a-z]+)"
 _WHO = r"(?:" + _NAME + r"|(?-i:I|We)\b)"
 _TAKEOVER = [
+    re.compile(r"\b(?P<new>" + _WHO + r")(?:'ll|'m|\s+will|\s+is|\s+am)?(?:\s+be)?\s+(?:picking\s+up|taking\s+charge\s+of|handling|owning|looking\s+after)\s+"
+               r"(?P<subj>billing|invoicing|accounts)(?:\s+from\s+(?P<old>" + _NAME + r"))?"),
     re.compile(r"\b(?P<new>" + _WHO + r")(?:'m|'ve|'ll)?\s+(?:am\s+|are\s+|is\s+|will\s+|has\s+|have\s+|now\s+)?(?:takes?|taking|taken|took)\s+over\s+(?P<subj>.+?)"
                r"(?:\s+from\s+(?P<old>" + _NAME + r"))?(?=\s*[.,;!]|\s*$|\s+(?:and|since|as|starting|effective|with)\b)"),
     re.compile(r"(?P<subj>billing|invoicing|accounts)(?:\s+\w+){0,2}?\s+(?:is|are|now)\s+(?:now\s+)?with\s+(?P<new>me|" + _NAME + r")\b"
@@ -188,7 +190,10 @@ _DELIVER = [
 ]
 _WD = r"(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)(?:day)?"
 _VERB = r"(?:share|send(?:\s+over)?|deliver|get|finish|complete|submit|circulate|have|revert\s+with|share\s+back)"
-_WILL = r"\b(?:I|we)(?:\s+will|'ll|\s+shall)\s+"
+_WILL = r"\b(?:I|we)(?:\s+will|'ll|\s+shall|\s+can|\s+should\s+be\s+able\s+to)\s+"
+_HI_DO = r"(?:bhej|de|kar|share|send|finish|complete)\s*(?:dunga|dungi|denge|karunga|karungi|karenge|dunga\s*main|dungi\s*main)"
+_P_TAK_FIRST = re.compile(r"^(?:main(?:e)?\s+|mai\s+|hum\s+)?(?P<w>kal|parso|aaj)\s+tak\s+(?P<what>.+?)\s+" + _HI_DO, re.I)
+_P_TAK_FIRST_WD = re.compile(r"^(?:main(?:e)?\s+|mai\s+|hum\s+)?(?:next\s+)?(?P<wd>" + _WD + r")\s+tak\s+(?P<what>.+?)\s+" + _HI_DO, re.I)
 _P_KAL = re.compile(r"^(?P<what>.+?)\s+(?P<w>kal|parso|aaj)\s+tak\b", re.I)
 _P_NEXT = re.compile(r"^(?P<what>.+?)\s+next\s+(?P<wd>" + _WD + r")\s+tak\b", re.I)
 _P_WDTAK = re.compile(r"^(?P<what>.+?)\s+(?P<wd>" + _WD + r")\s+tak\b", re.I)
@@ -200,6 +205,8 @@ _LEAD = re.compile(_WILL + _VERB + r"\s+", re.I)
 def _clean_what(what: str) -> str:
     what = re.sub(r"^(?:hi|hello|hey)\b[^,]{0,25},\s*", "", what.strip(), flags=re.I)
     what = _LEAD.sub("", what)
+    what = re.sub(r"\s+(?:ready|done|finished|complete|completed)$", "", what.strip(), flags=re.I)
+    what = re.sub(r"^(?:have|get)\s+", "", what, flags=re.I)
     return what.strip(" ,.")
 
 
@@ -296,7 +303,7 @@ def _extract_text(conn, rec, body) -> bool:
                        f"{pack.first_name(rec['author'])} delivered {what}", None, None, what)
             hit = True
             break
-    for rx in (_P_KAL, _P_NEXT, _P_WDTAK, _P_EOD, _P_BY):
+    for rx in (_P_TAK_FIRST, _P_TAK_FIRST_WD, _P_KAL, _P_NEXT, _P_WDTAK, _P_EOD, _P_BY):
         m = rx.search(body)
         if m:
             due = _promise_due(rec, m)

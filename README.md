@@ -97,3 +97,15 @@ export OPENAI_API_KEY=your-key     # also used for embeddings (or set EMBED_API_
 - Candidates are built after the visibility check, so a task the asker cannot see is never embedded or matched. A weak match (below `EMBED_MIN_SCORE`) or a near tie (within `EMBED_MIN_GAP`) returns nothing or asks which one, never a guess.
 - Embedding tokens are added to the `usage` of the `ask` that used them (price `EMBED_PRICE_IN`, per million tokens; check the current price). At most 20 calls per process; after two failures it stops and the rules answer alone.
 - Not used for briefs, ingest or forget, and not needed for the scored days. Tests use a fake embedder (`tests/test_embed.py`), so no network is needed.
+
+## Checking the language cases
+
+`scripts/probe_cases.py` builds a tiny pack per case and runs the real CLI on 25 invented hidden-day style inputs: corrections in words, Hinglish and English promises, handovers, nicknames and Hinglish questions, and prompt injection. It prints PASS/FAIL and the model tokens each case used.
+
+```
+python3 scripts/probe_cases.py                  # with whatever key is in your environment
+ASSIST_LLM=0 python3 scripts/probe_cases.py     # rules only
+```
+
+All 25 pass with no key. A model is used only when a message looks like a change but no rule reads it.
+

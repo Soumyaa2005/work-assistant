@@ -121,7 +121,7 @@ def test_question_fallback_answers_and_reports_tokens(tmp_path, monkeypatch):
     cli.ingest(1)
     fake(monkeypatch, lambda s, u: {"question": "Who owns billing for Northbeam Retail?", "client_phrase": "NB"})
     from assist.ask import ask
-    out = ask(db.connect(), "p02", "2026-11-03T00:00:00Z", "NB ka billing kaun dekhta hai, NB?")
+    out = ask(db.connect(), "p02", "2026-11-03T00:00:00Z", "Which colleague deals with the money side of NB, NB?")
     assert out["answer"]["sources"] == ["m1"]
     assert out["matched"] and out["matched"][0]["phrase"] == "NB"
     assert out["usage"]["input_tokens"] == 120 and out["usage"]["output_tokens"] == 30
@@ -133,7 +133,7 @@ def test_question_fallback_cannot_reach_other_company(tmp_path, monkeypatch):
     cli.ingest(1)
     fake(monkeypatch, lambda s, u: {"question": "Who owns billing for Northbeam Retail?", "client_phrase": "NB"})
     from assist.ask import ask
-    out = ask(db.connect(), "q01", "2026-11-03T00:00:00Z", "NB billing kaun dekhta hai, NB?")
+    out = ask(db.connect(), "q01", "2026-11-03T00:00:00Z", "Which colleague deals with the money side of NB, NB?")
     assert out["answer"]["sources"] == [] and "Kavya" not in json.dumps(out)
 
 
@@ -178,3 +178,21 @@ def test_openai_key_selects_openai_defaults(monkeypatch):
     finally:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         importlib.reload(L)
+
+
+def test_post_retries_plainer_request_on_400(monkeypatch):
+    import io
+    import urllib.error
+    from assist import llm as L
+    monkeypatch.setenv("ASSIST_LLM_KEY", "k")
+    bodies = []
+
+    def fake_send(body):
+        bodies.append(dict(body))
+        if "temperature" in body:
+            raise urllib.error.HTTPError("u", 400, "bad", {}, io.BytesIO(b"{}"))
+        return {"choices": [{"message": {"content": "{}"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+
+    monkeypatch.setattr(L, "_send", fake_send)
+    assert L._post([{"role": "user", "content": "hi"}]) == ("{}", 5, 2)
+    assert "temperature" in bodies[0] and "temperature" not in bodies[1]
